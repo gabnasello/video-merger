@@ -1,0 +1,124 @@
+# video-merger
+
+Merge all the videos in a folder (for example clips recorded with your phone) into a single `merged.mp4`, with a short black screen between clips.
+
+- Works with mp4, mov, m4v, mkv, avi, 3gp, webm and more.
+- Clips are joined in the order you added them to the folder: **the oldest pasted clip comes first**.
+- Incremental: keep `merged.mp4`, delete the clips you already used, paste new ones, run again. The new clips are appended after the existing merged video, which is not re-encoded (no quality loss).
+- Self-contained: a local virtual environment (`.venv`) holds everything, including ffmpeg (via the `imageio-ffmpeg` package). Nothing is installed on your system and no existing Python packages are used.
+
+## Project layout
+
+Put the project folder and your videos in the **same directory**:
+
+```
+my-videos/
+├── merge_videos.py
+├── requirements.txt
+├── README.md
+├── .gitignore        # keeps .venv and video files out of Git
+├── .venv/            # created by you (step 1 below)
+├── clip1.mp4         # your videos
+├── clip2.mov
+└── merged.mp4        # created by the script
+```
+
+## 1. Set up the virtual environment (once)
+
+Requires Python 3.8 or newer.
+
+**macOS / Linux**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+**Windows (PowerShell)**
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+**Windows (cmd)**
+
+```bat
+python -m venv .venv
+.venv\Scripts\activate.bat
+pip install -r requirements.txt
+```
+
+## 2. Activate the environment (every new terminal)
+
+```bash
+source .venv/bin/activate        # macOS / Linux
+.venv\Scripts\Activate.ps1       # Windows PowerShell
+```
+
+Leave it with `deactivate`.
+
+## 3. Merge the videos
+
+Copy your videos into the project folder, then run:
+
+```bash
+python merge_videos.py
+```
+
+The result is `merged.mp4` in the same folder.
+
+### Adding more videos later
+
+1. Delete the original clips you already merged (keep `merged.mp4`).
+2. Paste the new clips into the folder.
+3. Run `python merge_videos.py` again.
+
+The new clips are appended after `merged.mp4`, in the order you pasted them. If you leave the old clips in the folder, they will be merged again.
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `directory` | folder of the script | Folder containing the videos |
+| `--gap SECONDS` | `0.5` | Black screen between clips; `0` for no break |
+| `--sort added\|modified\|name` | `added` | Order of the clips (see below) |
+| `--reverse` | off | Newest first instead of oldest first |
+| `--width`, `--height` | `1920`, `1080` | Output resolution (clips are scaled to fit, with black bars) |
+| `--fps` | `30` | Output frame rate |
+
+Examples:
+
+```bash
+python merge_videos.py --gap 1.5                 # longer break
+python merge_videos.py --gap 0                   # no break
+python merge_videos.py --sort modified           # order by recording time
+python merge_videos.py /path/to/other/folder     # use another folder
+```
+
+### How the order is decided
+
+- `added` (default): when the file was pasted into the folder. This is the creation time on macOS and Windows; on Linux it is the closest available equivalent. If you paste many files at once, the order is that of the copy operation.
+- `modified`: the original recording time, which most file copies preserve. Use this if `added` gives the wrong order.
+- `name`: alphabetical.
+
+## Notes
+
+- Every new clip is re-encoded to H.264 / AAC at the chosen resolution and frame rate, so clips from different phones or orientations (portrait/landscape) can be joined. Clips without audio get silent audio.
+- If you change `--width`, `--height` or `--fps` after creating `merged.mp4`, the existing part keeps its old settings.
+- Encoding takes time for long videos.
+
+## Put it on GitHub
+
+```bash
+git init
+git add .
+git commit -m "Initial commit: video merger"
+git branch -M main
+git remote add origin https://github.com/<your-user>/video-merger.git
+git push -u origin main
+```
+
+`.gitignore` excludes `.venv/` and all video files, so only the code and documentation are uploaded.
