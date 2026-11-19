@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Merge all videos in a folder into one file (merged.mp4).
 
-- Clips are ordered by the time they were added to the folder (oldest first).
+- Clips are ordered by the date they were recorded (read from the video metadata),
+  oldest first. Works across several phones. Falls back to the file's modified
+  time when a video has no recording date.
 - A short black screen (default 0.5 s) is inserted between clips.
 - If merged.mp4 already exists, it is always placed first and is NOT re-encoded,
   so you can delete the source clips and keep adding new ones over time.
@@ -16,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import imageio_ffmpeg
@@ -38,12 +41,35 @@ def added_time(path: Path) -> float:
     return getattr(st, "st_birthtime", None) or st.st_ctime
 
 
+def recorded_time(path: Path) -> float:
+    """Recording date from the video metadata (UTC timestamp).
+
+    Falls back to the file's modified time if the metadata is missing or invalid
+    (for example videos re-saved by a messaging app).
+    """
+    out = subprocess.run([FFMPEG, "-hide_banner", "-i", str(path)],
+                         capture_output=True, text=True).stderr
+    m = re.search(r"creation_time\s*:\s*(\S+)", out)  # first match = container level
+    if m:
+        try:
+            dt = datetime.fromisoformat(m.group(1).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            if dt.year >= 1990:  # ignore placeholder dates such as 1970 or 1904
+                return dt.timestamp()
+        except ValueError:
+            pass
+    return path.stat().st_mtime
+
+
 def sort_key(mode: str):
-    if mode == "modified":   # original recording time (kept by most copies)
+    if mode == "added":      # when pasted into the folder
+        return added_time
+    if mode == "modified":   # file modified time
         return lambda p: p.stat().st_mtime
     if mode == "name":
         return lambda p: p.name.lower()
-    return added_time
+    return recorded_time     # default: when the video was shot
 
 
 def has_audio(path: Path) -> bool:
@@ -84,8 +110,10 @@ def main():
                     help="folder with the videos (default: folder of this script)")
     ap.add_argument("--gap", type=float, default=0.5,
                     help="seconds of black screen between clips (default: 0.5, 0 = none)")
-    ap.add_argument("--sort", choices=["added", "modified", "name"], default="added",
-                    help="clip order (default: added = when pasted, oldest first)")
+    ap.add_argument("--sort", choices=["recorded", "added", "modified", "name"],
+                    default="recorded",
+                    help="clip order (default: recorded = date in the video metadata, "
+                         "oldest first)")
     ap.add_argument("--reverse", action="store_true", help="newest first instead")
     ap.add_argument("--width", type=int, default=1920)
     ap.add_argument("--height", type=int, default=1080)

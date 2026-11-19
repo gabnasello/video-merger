@@ -1,0 +1,16 @@
+# Virtual environment and Python cache
+.venv/
+__pycache__/
+*.pyc
+
+# Videos (inputs and merged output) - keep them out of Git
+*.mp4
+*.mov
+*.m4v
+*.mkv
+*.avi
+*.3gp
+*.webm
+*.mts
+*.m2ts
+*.wmv
