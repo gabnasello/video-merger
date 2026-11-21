@@ -7,8 +7,8 @@
 - The video is vertical (1080x1920) if most clips are vertical, otherwise
   horizontal (1920x1080). Clips with a different orientation get black bars.
   When merged.mp4 already exists, its size is kept.
-- Whenever the month changes, a black title card ("March 2024") is inserted and a
-  chapter is created, so you can jump from month to month in most video players.
+- Whenever the month changes, a black title card ("Marzo 2024") is inserted and a
+  chapter is created (month names in Italian by default, see --language), so you can jump from month to month in most video players.
   Between clips of the same month, a short black screen is inserted instead.
 - A chapters.txt is written next to merged.mp4, ready to paste into a YouTube
   video description (YouTube then shows the chapters on the progress bar).
@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import imageio_ffmpeg
+from babel import Locale, UnknownLocaleError
 from PIL import Image, ImageDraw, ImageFont
 
 FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
@@ -36,8 +37,7 @@ VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".3gp", ".webm",
               ".mts", ".m2ts", ".wmv"}
 MERGED_NAME = "merged.mp4"
 CHAPTERS_NAME = "chapters.txt"
-MONTHS = ["January", "February", "March", "April", "May", "June", "July",
-          "August", "September", "October", "November", "December"]
+DEFAULT_LANGUAGE = "it"
 
 # Encoding settings shared by clips, gaps and title cards so they can be joined
 # without re-encoding.
@@ -168,15 +168,19 @@ def month_of(timestamp: float, tz):
     return (dt.year, dt.month)
 
 
-def month_label(ym) -> str:
-    return f"{MONTHS[ym[1] - 1]} {ym[0]}"
+def get_month_names(language: str):
+    """The 12 month names in the given language (e.g. it, en, fr, de, pt_BR)."""
+    try:
+        locale = Locale.parse(language.replace("-", "_"))
+    except (UnknownLocaleError, ValueError):
+        sys.exit(f"Unknown language '{language}'. Use a language code such as "
+                 "it, en, fr, de, es, pt, nl, ru, ja, zh.")
+    names = locale.months["stand-alone"]["wide"]
+    return [names[i][:1].upper() + names[i][1:] for i in range(1, 13)]
 
 
-def parse_month_label(title: str):
-    parts = title.split()
-    if len(parts) == 2 and parts[0] in MONTHS and parts[1].isdigit():
-        return (int(parts[1]), MONTHS.index(parts[0]) + 1)
-    return None
+def month_label(ym, names) -> str:
+    return f"{names[ym[1] - 1]} {ym[0]}"
 
 
 # ------------------------------------------------------------------- encoding
@@ -204,8 +208,18 @@ def make_gap(dst: Path, seconds: float, width: int, height: int, fps: int):
         "-t", str(seconds), *ENCODE_OPTS, str(dst)], check=True)
 
 
-def load_font(size: int):
-    for name in ("DejaVuSans.ttf", "Arial.ttf", "arial.ttf", "Helvetica.ttc"):
+FONT_CANDIDATES = ("DejaVuSans.ttf", "NotoSans-Regular.ttf", "Arial.ttf", "arial.ttf",
+                   "Helvetica.ttc", "NotoSansCJK-Regular.ttc", "Arial Unicode.ttf",
+                   "msyh.ttc", "YuGothR.ttc", "malgun.ttf")
+
+
+def load_font(size: int, font_path=None):
+    if font_path:
+        try:
+            return ImageFont.truetype(font_path, size)
+        except OSError:
+            sys.exit(f"Cannot open the font file: {font_path}")
+    for name in FONT_CANDIDATES:
         try:
             return ImageFont.truetype(name, size)
         except OSError:
@@ -214,16 +228,16 @@ def load_font(size: int):
 
 
 def make_title_card(dst: Path, label: str, seconds: float,
-                    width: int, height: int, fps: int):
+                    width: int, height: int, fps: int, font_path=None):
     """Black screen with the month and year written in white, silent audio."""
     png = dst.with_suffix(".png")
     img = Image.new("RGB", (width, height), "black")
     draw = ImageDraw.Draw(img)
     size = max(12, min(height // 8, width // 8))
-    font = load_font(size)
+    font = load_font(size, font_path)
     while size > 12 and draw.textlength(label, font=font) > width * 0.85:
         size -= 4
-        font = load_font(size)
+        font = load_font(size, font_path)
     draw.text((width / 2, height / 2), label, fill="white", font=font, anchor="mm")
     img.save(png)
     subprocess.run([
@@ -275,6 +289,17 @@ def main():
                          "(default: 0.5, 0 = none)")
     ap.add_argument("--title-duration", type=float, default=2.0,
                     help="seconds the month title card is shown (default: 2)")
+    ap.add_argument("--language", default=DEFAULT_LANGUAGE,
+                    help="language of the month names on the title cards and in the "
+                         "chapters, as a language code: it, en, fr, de, es, pt, nl, ... "
+                         "(default: it = Italian)")
+    ap.add_argument("--font", default=None,
+                    help="path to a .ttf/.otf font for the title cards (needed for "
+                         "languages such as Chinese, Japanese, Korean or Arabic)")
+    ap.add_argument("--earlier-title", default=None,
+                    help="chapter title for an existing merged.mp4 that has no "
+                         "chapters yet (default: 'Video precedenti' in Italian, "
+                         "otherwise 'Earlier videos')")
     ap.add_argument("--no-chapters", action="store_true",
                     help="no month title cards and no chapters, only the gap")
     ap.add_argument("--timezone", default=None,
@@ -297,6 +322,7 @@ def main():
     args = ap.parse_args()
 
     tz = get_timezone(args.timezone)
+    months = get_month_names(args.language)
     folder = args.directory.resolve()
     merged = folder / MERGED_NAME
     candidates = [p for p in folder.iterdir()
@@ -313,7 +339,7 @@ def main():
     print(f"Merging {len(clips)} clip(s)"
           + (" after the existing merged.mp4" if merged.exists() else "") + ":")
     for c in clips:
-        print(f"  - {c.name}  ({month_label(month_of(recorded[c], tz))})")
+        print(f"  - {c.name}  ({month_label(month_of(recorded[c], tz), months)})")
 
     use_chapters = not args.no_chapters
     width, height = choose_size(args, merged, clips)
@@ -334,27 +360,29 @@ def main():
             encoded.append(out)
 
         # Existing merged.mp4 goes first, untouched; keep its chapters.
-        playlist, chapters, prev_month, t = [], [], None, 0.0
+        playlist, chapters, prev_label, t = [], [], None, 0.0
         if merged.exists():
             playlist.append(merged)
             t = duration(merged)
             if use_chapters:
                 chapters = read_chapters(merged)
                 if chapters:
-                    prev_month = parse_month_label(chapters[-1][1])
+                    prev_label = chapters[-1][1]
                 else:
-                    chapters = [(0.0, "Earlier videos")]
+                    earlier = args.earlier_title or (
+                        "Video precedenti" if args.language.lower().startswith("it")
+                        else "Earlier videos")
+                    chapters = [(0.0, earlier)]
 
         cards = {}
         for clip, enc in zip(clips, encoded):
-            ym = month_of(recorded[clip], tz)
+            label = month_label(month_of(recorded[clip], tz), months)
             separator = None
-            if use_chapters and ym != prev_month:
-                label = month_label(ym)
+            if use_chapters and label != prev_label:
                 if label not in cards:
                     cards[label] = tmp / f"card_{len(cards):03d}.mp4"
                     make_title_card(cards[label], label, args.title_duration,
-                                    width, height, args.fps)
+                                    width, height, args.fps, args.font)
                 separator = cards[label]
                 chapters.append((t, label))
             elif playlist and gap_clip:
@@ -364,7 +392,7 @@ def main():
                 t += duration(separator)
             playlist.append(enc)
             t += duration(enc)
-            prev_month = ym
+            prev_label = label
 
         listfile = tmp / "list.txt"
         listfile.write_text("".join(

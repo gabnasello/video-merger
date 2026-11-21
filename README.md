@@ -1,6 +1,6 @@
 # video-merger
 
-Merge all the videos in a folder (for example clips recorded with your phone) into a single `merged.mp4`, with a black title card ("March 2024") at the start of every month and a chapter for each month.
+Merge all the videos in a folder (for example clips recorded with your phone) into a single `merged.mp4`, with a black title card ("Marzo 2024") at the start of every month and a chapter for each month.
 
 - Vertical or horizontal: the merged video is vertical (1080x1920) when most of your clips are vertical, otherwise horizontal (1920x1080). Detected automatically, including phone videos that are stored as landscape with a rotation flag.
 - Works with mp4, mov, m4v, mkv, avi, 3gp, webm and more.
@@ -90,6 +90,9 @@ The new clips are appended after `merged.mp4`, in chronological order, and the e
 | `directory` | folder of the script | Folder containing the videos |
 | `--gap SECONDS` | `0.5` | Black screen between clips of the same month; `0` for no break |
 | `--title-duration SECONDS` | `2` | How long the month title card is shown |
+| `--language CODE` | `it` | Language of the month names on the title cards and in the chapters: `it`, `en`, `fr`, `de`, `es`, `pt`, `nl`, `ru`, ... (any language code) |
+| `--font PATH` | automatic | Font file (.ttf/.otf) for the title cards, needed for some languages (see below) |
+| `--earlier-title TEXT` | automatic | Chapter title for an old `merged.mp4` that has no chapters yet |
 | `--no-chapters` | off | No title cards and no chapters, only the gap between clips |
 | `--timezone NAME` | this computer's time zone | Time zone used to decide which month a clip belongs to, e.g. `Europe/Brussels` |
 | `--sort recorded\|added\|modified\|name` | `recorded` | Order of the clips (see below) |
@@ -104,6 +107,8 @@ Examples:
 python merge_videos.py --orientation vertical    # force a vertical video
 python merge_videos.py --gap 1.5                 # longer break
 python merge_videos.py --gap 0                   # no break
+python merge_videos.py --language en             # month names in English
+python merge_videos.py --language fr             # ... or French, German (de), Spanish (es) ...
 python merge_videos.py --title-duration 3        # longer month title
 python merge_videos.py --timezone Europe/Brussels
 python merge_videos.py --sort added              # order by when files were pasted
@@ -124,9 +129,9 @@ The script lists the clips in the order it will use before it starts encoding, s
 `chapters.txt` looks like this:
 
 ```
-0:00 January 2024
-12:41 February 2024
-25:03 April 2024
+0:00 Gennaio 2024
+12:41 Febbraio 2024
+25:03 Aprile 2024
 ```
 
 When you upload `merged.mp4` to YouTube (for example as a private video), paste this text into the video description. YouTube then shows the chapters on the progress bar with previews, and you can jump between months. YouTube requires the first chapter at `0:00`, at least three chapters, and at least 10 seconds per chapter. The script warns you if this is not met. Uploading is done manually.
@@ -139,7 +144,9 @@ The chapters are also stored inside `merged.mp4` itself, so they work offline in
 - The format is decided the first time. Later runs keep the size of the existing `merged.mp4`, even if you add clips of the other orientation (they get black bars). To change the format, delete `merged.mp4` and merge your clips again. Changing `--fps` later has the same limitation.
 - Clips with a different orientation than the video (for example a horizontal clip in a vertical video) are shown fully, with black bars above and below.
 - A clip is assigned to a month using the time zone above, so a clip shot late on the last day of a month is not moved to the wrong month.
-- Month names are in English.
+- Month names are in Italian by default. Use `--language` with any language code (for example `en`, `fr`, `de`, `es`, `pt`, `pt_BR`, `nl`, `ru`). The names come from the `Babel` package inside the virtual environment, so nothing else needs to be installed.
+- Keep the same language between runs. The script recognises the last month by its title, so if you change the language when adding clips, one extra title card may appear for a month that was already there.
+- Latin, Greek and Cyrillic scripts work out of the box. For Chinese, Japanese, Korean, Arabic, Thai and similar, pass a font that contains those characters, for example `--language ja --font /path/to/NotoSansJP-Regular.ttf`.
 - Encoding takes time for long videos.
 
 ## Put it on GitHub
